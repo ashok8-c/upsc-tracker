@@ -8,7 +8,6 @@ import { useSettings } from "./hooks/useSettings";
 import { useNotifications } from "./hooks/useNotifications";
 import { useReflections } from "./hooks/useReflections";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 const today = () => new Date().toISOString().split("T")[0];
 const addDays = (dateStr, n) => {
   const d = new Date(dateStr);
@@ -27,7 +26,6 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 
 const SUBJECTS = ["History", "Geography", "Polity", "Economy", "Environment", "Science & Tech", "Current Affairs", "Ethics", "Art & Culture", "Other"];
 
-// ── Icons ─────────────────────────────────────────────────────────────────────
 const Icon = ({ name, size = 16 }) => {
   const icons = {
     plus: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
@@ -49,7 +47,6 @@ const Icon = ({ name, size = 16 }) => {
   return icons[name] || null;
 };
 
-// ── STYLES ────────────────────────────────────────────────────────────────────
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -181,13 +178,14 @@ export default function App() {
   const [tab, setTab] = useState("dashboard");
   const [showAddTopic, setShowAddTopic] = useState(false);
   const [showLogTime, setShowLogTime] = useState(false);
+  const [selectedTopicId, setSelectedTopicId] = useState("");
   const [showPYQ, setShowPYQ] = useState(null);
   const [showReflection, setShowReflection] = useState(false);
 
   const { topics, addTopic, updateTopic, deleteTopic } = useTopics(user?.id);
-  const { logs, addLog } = useLogs(user?.id);
+  // ✅ FIXED: destructure deleteLog from useLogs
+  const { logs, addLog, deleteLog } = useLogs(user?.id);
   const { dailyTarget, setDailyTarget } = useSettings(user?.id);
-  // ✅ FIXED: Hook is now correctly called inside the component
   const { reflections, addReflection } = useReflections(user?.id);
 
   useEffect(() => {
@@ -246,9 +244,15 @@ export default function App() {
     setShowAddTopic(false);
   };
 
+  // ✅ FIXED: removed duplicate closing brace
   const handleLogTime = async (data) => {
-    await addLog({ ...data, date: today() });
+    if (!selectedTopicId) {
+      alert("Please select a topic");
+      return;
+    }
+    await addLog({ ...data, date: today(), topic_id: selectedTopicId });
     setShowLogTime(false);
+    setSelectedTopicId("");
   };
 
   const handleAddPYQ = async (topicId, question) => {
@@ -272,7 +276,6 @@ export default function App() {
     await updateTopic(topicId, { pyqs: newPYQs });
   };
 
-  // ✅ NEW: Save reflection using the hook
   const handleSaveReflection = async (r) => {
     await addReflection(r, user.id);
     setShowReflection(false);
@@ -321,7 +324,6 @@ export default function App() {
         </aside>
 
         <main className="main">
-          {/* ✅ FIXED: reflections now passed as prop to DashboardPage */}
           {tab === "dashboard" && (
             <DashboardPage
               todayTasks={todayTasks} overdueTasks={overdueTasks}
@@ -332,31 +334,39 @@ export default function App() {
               onLogTime={() => setShowLogTime(true)}
               onReflect={() => setShowReflection(true)}
               reflections={reflections}
+              deleteLog={deleteLog}
             />
           )}
           {tab === "topics" && <TopicsPage topics={topics} deleteTopic={deleteTopic} onAddTopic={() => setShowAddTopic(true)} onPYQ={(id) => setShowPYQ(id)} />}
           {tab === "analytics" && <AnalyticsPage logs={logs} topics={topics} />}
-          {tab === "target" && <TargetPage dailyTarget={dailyTarget} setDailyTarget={setDailyTarget} todayHours={todayHours} todayProgress={todayProgress} logs={logs} onLogTime={() => setShowLogTime(true)} />}
+          {/* ✅ FIXED: pass topics to TargetPage so validLogs filter works */}
+          {tab === "target" && <TargetPage dailyTarget={dailyTarget} setDailyTarget={setDailyTarget} todayHours={todayHours} todayProgress={todayProgress} logs={logs} topics={topics} onLogTime={() => setShowLogTime(true)} />}
         </main>
       </div>
 
       {showAddTopic && <AddTopicModal onClose={() => setShowAddTopic(false)} onSave={handleAddTopic} />}
-      {showLogTime && <LogTimeModal onClose={() => setShowLogTime(false)} onSave={handleLogTime} />}
+      {showLogTime && (
+        <LogTimeModal
+          onClose={() => setShowLogTime(false)}
+          onSave={handleLogTime}
+          topics={topics}
+          selectedTopicId={selectedTopicId}
+          setSelectedTopicId={setSelectedTopicId}
+        />
+      )}
       {showPYQ && <PYQModal topic={topics.find(t => t.id === showPYQ)} onClose={() => setShowPYQ(null)} onAdd={handleAddPYQ} onCycle={handleCyclePYQ} onDelete={handleDeletePYQ} />}
-      {/* ✅ FIXED: now uses handleSaveReflection via hook instead of raw supabase call */}
       {showReflection && <ReflectionModal onClose={() => setShowReflection(false)} onSave={handleSaveReflection} />}
     </>
   );
 }
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
-// ✅ ADDED: reflections prop received and today's reflection shown at bottom
-function DashboardPage({ todayTasks, overdueTasks, todayHours, todayProgress, dailyTarget, todayLogs, topics, markRevision, onAddTopic, onLogTime, onReflect, reflections }) {
+// ✅ ADDED: deleteLog in props
+function DashboardPage({ todayTasks, overdueTasks, todayHours, todayProgress, dailyTarget, todayLogs, topics, markRevision, onAddTopic, onLogTime, onReflect, reflections, deleteLog }) {
   const pendingToday = todayTasks.filter(t => t.status !== "done");
   const doneToday = todayTasks.filter(t => t.status === "done");
   const dateLabel = new Date(today() + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
-  // ✅ Find today's reflection if it exists
   const todayReflection = (reflections || []).find(r => r.date === today());
 
   return (
@@ -428,13 +438,94 @@ function DashboardPage({ todayTasks, overdueTasks, todayHours, todayProgress, da
             {todayLogs.length === 0
               ? <div className="empty" style={{ padding: "24px 0" }}><div className="empty-icon">⏱️</div><h3>No time logged</h3><p>Click "Log Time" to add sessions</p></div>
               : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {/* ✅ ADDED: delete button on each log entry */}
                   {todayLogs.map(l => (
-                    <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 12, background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 14px" }}>
-                      <div style={{ width: 8, height: 8, borderRadius: 2, background: subjColor(l.subject), flexShrink: 0 }} />
-                      <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{l.subject}</span>
-                      <span style={{ fontSize: 13, color: "var(--accent)", fontFamily: "var(--mono)" }}>{l.hours}h</span>
-                    </div>
-                  ))}
+  <div
+    key={l.id}
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 12,
+      background: "var(--surface)",
+      border: "1px solid var(--border)",
+      borderRadius: 8,
+      padding: "10px 14px"
+    }}
+  >
+    {/* Subject Color Dot */}
+    <div
+      style={{
+        width: 8,
+        height: 8,
+        borderRadius: 2,
+        background: subjColor(l.subject),
+        flexShrink: 0
+      }}
+    />
+
+    {/* Subject Name */}
+    <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>
+      {l.subject}
+    </span>
+
+    {/* Hours */}
+    <span
+      style={{
+        fontSize: 13,
+        color: "var(--accent)",
+        fontFamily: "var(--mono)"
+      }}
+    >
+      {l.hours}h
+    </span>
+
+    {/* 🔥 IMPROVED DELETE BUTTON */}
+    <button
+      style={{
+        padding: "6px 10px",
+        fontSize: 12,
+        borderRadius: 6,
+        border: "1px solid #ff5c5c",
+        background: "rgba(255,92,92,0.1)",
+        color: "#ff5c5c",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: 4
+      }}
+      onClick={async () => {
+        const confirmDelete = window.confirm("Delete this log?");
+        if (!confirmDelete) return;
+
+        try {
+          await deleteLog(l.id);
+        } catch (err) {
+          console.error(err);
+          alert("Failed to delete log");
+        }
+      }}
+    >
+      ❌ Delete
+    </button>
+  </div>
+))}
+
+{/* TOTAL SECTION */}
+<div
+  style={{
+    display: "flex",
+    justifyContent: "space-between",
+    padding: "8px 14px",
+    fontSize: 12,
+    color: "var(--text3)",
+    fontFamily: "var(--mono)"
+  }}
+>
+  <span>Total</span>
+  <span style={{ color: "var(--accent)", fontWeight: 700 }}>
+    {todayHours.toFixed(1)}h / {dailyTarget}h
+  </span>
+</div>
                   <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 14px", fontSize: 12, color: "var(--text3)", fontFamily: "var(--mono)" }}>
                     <span>Total</span>
                     <span style={{ color: "var(--accent)", fontWeight: 700 }}>{todayHours.toFixed(1)}h / {dailyTarget}h</span>
@@ -444,7 +535,6 @@ function DashboardPage({ todayTasks, overdueTasks, todayHours, todayProgress, da
           </div>
         </div>
 
-        {/* ✅ NEW: Today's Reflection Section */}
         <div className="divider" />
         <div className="section-header">
           <div className="section-title">Today's Reflection</div>
@@ -557,28 +647,36 @@ function TopicsPage({ topics, deleteTopic, onAddTopic, onPYQ }) {
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
 function AnalyticsPage({ logs, topics }) {
+  const validLogs = logs.filter(log =>
+    log.topic_id && topics.some(t => t.id === log.topic_id)
+  );
+
+  const totalHours = validLogs.reduce((sum, log) => sum + Number(log.hours), 0);
+
   const last14 = Array.from({ length: 14 }, (_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - (13 - i));
+    const d = new Date();
+    d.setDate(d.getDate() - (13 - i));
     const ds = d.toISOString().split("T")[0];
-    const h = logs.filter(l => l.date === ds).reduce((s, l) => s + Number(l.hours), 0);
+    const h = validLogs.filter(l => l.date === ds).reduce((s, l) => s + Number(l.hours), 0);
     return { date: ds, label: d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }).replace(" ", "\n"), hours: h };
   });
+
   const maxH = Math.max(...last14.map(d => d.hours), 1);
 
   const subjBreakdown = {};
-  logs.forEach(l => { subjBreakdown[l.subject] = (subjBreakdown[l.subject] || 0) + Number(l.hours); });
+  validLogs.forEach(l => { subjBreakdown[l.subject] = (subjBreakdown[l.subject] || 0) + Number(l.hours); });
   const subjArr = Object.entries(subjBreakdown).sort((a, b) => b[1] - a[1]);
-  const totalH = subjArr.reduce((s, [, h]) => s + h, 0);
+  const totalSubjH = subjArr.reduce((s, [, h]) => s + h, 0);
 
-  const weekH = logs.filter(l => (new Date() - new Date(l.date)) / 86400000 <= 7).reduce((s, l) => s + Number(l.hours), 0);
-  const prevWeekH = logs.filter(l => { const d = (new Date() - new Date(l.date)) / 86400000; return d > 7 && d <= 14; }).reduce((s, l) => s + Number(l.hours), 0);
+  const weekH = validLogs.filter(l => (new Date() - new Date(l.date)) / 86400000 <= 7).reduce((s, l) => s + Number(l.hours), 0);
+  const prevWeekH = validLogs.filter(l => { const d = (new Date() - new Date(l.date)) / 86400000; return d > 7 && d <= 14; }).reduce((s, l) => s + Number(l.hours), 0);
   const weekTrend = prevWeekH > 0 ? ((weekH - prevWeekH) / prevWeekH * 100).toFixed(0) : null;
 
   const insights = [];
   if (subjArr.length > 0) insights.push(`You've spent the most time on ${subjArr[0][0]} (${subjArr[0][1].toFixed(1)}h total)`);
   const d1miss = topics.filter(t => addDays(t.day0, 1) < today() && (t.revisions || {})[1] !== "done").length;
   if (d1miss > 0) insights.push(`You've missed Day 1 revisions for ${d1miss} topic${d1miss > 1 ? "s" : ""} — these are critical!`);
-  const avg7 = (logs.filter(l => (new Date() - new Date(l.date)) / 86400000 <= 7).reduce((s, l) => s + Number(l.hours), 0) / 7).toFixed(1);
+  const avg7 = (validLogs.filter(l => (new Date() - new Date(l.date)) / 86400000 <= 7).reduce((s, l) => s + Number(l.hours), 0) / 7).toFixed(1);
   insights.push(`Your 7-day daily average is ${avg7}h`);
 
   return (
@@ -586,10 +684,23 @@ function AnalyticsPage({ logs, topics }) {
       <div className="topbar"><div><div className="topbar-title">Analytics</div><div className="topbar-date">Performance overview</div></div></div>
       <div className="page">
         <div className="stats-row" style={{ gridTemplateColumns: "repeat(3,1fr)" }}>
-          <div className="stat-card" style={{ "--accent-color": "var(--blue)" }}><div className="stat-value">{weekH.toFixed(1)}<span style={{ fontSize: 16, color: "var(--text3)" }}>h</span></div><div className="stat-label">This Week</div><div className="stat-sub">{weekTrend !== null ? `${weekTrend > 0 ? "↑" : "↓"} ${Math.abs(weekTrend)}% vs last week` : "First week!"}</div></div>
-          <div className="stat-card" style={{ "--accent-color": "var(--accent)" }}><div className="stat-value">{totalH.toFixed(1)}<span style={{ fontSize: 16, color: "var(--text3)" }}>h</span></div><div className="stat-label">Total Hours</div><div className="stat-sub">across all subjects</div></div>
-          <div className="stat-card" style={{ "--accent-color": "var(--green)" }}><div className="stat-value">{topics.filter(t => [1,3,7].every(d => (t.revisions||{})[d] === "done")).length}</div><div className="stat-label">Fully Revised</div><div className="stat-sub">of {topics.length} total topics</div></div>
+          <div className="stat-card" style={{ "--accent-color": "var(--blue)" }}>
+            <div className="stat-value">{weekH.toFixed(1)}<span style={{ fontSize: 16, color: "var(--text3)" }}>h</span></div>
+            <div className="stat-label">This Week</div>
+            <div className="stat-sub">{weekTrend !== null ? `${weekTrend > 0 ? "↑" : "↓"} ${Math.abs(weekTrend)}% vs last week` : "First week!"}</div>
+          </div>
+          <div className="stat-card" style={{ "--accent-color": "var(--accent)" }}>
+            <div className="stat-value">{totalHours.toFixed(1)}<span style={{ fontSize: 16, color: "var(--text3)" }}>h</span></div>
+            <div className="stat-label">Total Hours</div>
+            <div className="stat-sub">across all subjects</div>
+          </div>
+          <div className="stat-card" style={{ "--accent-color": "var(--green)" }}>
+            <div className="stat-value">{topics.filter(t => [1,3,7].every(d => (t.revisions||{})[d] === "done")).length}</div>
+            <div className="stat-label">Fully Revised</div>
+            <div className="stat-sub">of {topics.length} total topics</div>
+          </div>
         </div>
+
         <div className="two-col">
           <div>
             <div className="section-header"><div className="section-title">Daily Study Hours (14 Days)</div></div>
@@ -611,13 +722,13 @@ function AnalyticsPage({ logs, topics }) {
               {subjArr.length === 0
                 ? <div className="empty" style={{ padding: "20px 0" }}><p>No data yet</p></div>
                 : <>
-                    <SubjectPieChart data={subjArr} total={totalH} />
+                    <SubjectPieChart data={subjArr} total={totalSubjH} />
                     <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
                       {subjArr.map(([s, h]) => (
                         <div key={s} style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div style={{ width: 8, height: 8, borderRadius: 2, background: subjColor(s), flexShrink: 0 }} />
                           <span style={{ flex: 1, fontSize: 12 }}>{s}</span>
-                          <div className="progress-wrap" style={{ flex: 2 }}><div className="progress-fill" style={{ width: `${(h / totalH) * 100}%`, background: subjColor(s) }} /></div>
+                          <div className="progress-wrap" style={{ flex: 2 }}><div className="progress-fill" style={{ width: `${(h / totalSubjH) * 100}%`, background: subjColor(s) }} /></div>
                           <span style={{ fontSize: 12, color: "var(--text2)", fontFamily: "var(--mono)", width: 40, textAlign: "right" }}>{h.toFixed(1)}h</span>
                         </div>
                       ))}
@@ -627,6 +738,7 @@ function AnalyticsPage({ logs, topics }) {
             </div>
           </div>
         </div>
+
         {insights.length > 0 && (
           <>
             <div className="divider" />
@@ -647,7 +759,7 @@ function AnalyticsPage({ logs, topics }) {
 }
 
 function SubjectPieChart({ data, total }) {
-  const size = 100; const cx = 50; const cy = 50; const r = 38;
+  const cx = 50; const cy = 50; const r = 38;
   let startAngle = -Math.PI / 2;
   const slices = data.map(([s, h]) => {
     const angle = (h / total) * Math.PI * 2;
@@ -666,23 +778,80 @@ function SubjectPieChart({ data, total }) {
 }
 
 // ── Target Page ───────────────────────────────────────────────────────────────
-function TargetPage({ dailyTarget, setDailyTarget, todayHours, todayProgress, logs, onLogTime }) {
+function TargetPage({ dailyTarget, setDailyTarget, todayHours, todayProgress, logs, topics, onLogTime,deleteLog}) {
+  const validLogs = logs.filter(log =>
+    log.topic_id && topics.some(t => t.id === log.topic_id)
+  );
+
   const [editTarget, setEditTarget] = useState(false);
   const [tmpTarget, setTmpTarget] = useState(dailyTarget);
 
   const weekDays = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(); d.setDate(d.getDate() - i);
+    const d = new Date();
+    d.setDate(d.getDate() - i);
     const ds = d.toISOString().split("T")[0];
-    const h = logs.filter(l => l.date === ds).reduce((s, l) => s + Number(l.hours), 0);
+    const h = validLogs.filter(l => l.date === ds).reduce((s, l) => s + Number(l.hours), 0);
     return { date: ds, label: d.toLocaleDateString("en-IN", { weekday: "short" }), hours: h, met: h >= dailyTarget };
   }).reverse();
 
   return (
     <>
       <div className="topbar">
-        <div><div className="topbar-title">Daily Target</div><div className="topbar-date">Track your daily goals</div></div>
-        <button className="btn btn-ghost" onClick={onLogTime}><Icon name="plus" size={14} />Log Time</button>
-      </div>
+  <div>
+    <div className="topbar-title">Daily Target</div>
+    <div className="topbar-date">Track your daily goals</div>
+  </div>
+
+  {/* RIGHT SIDE BUTTONS */}
+  <div style={{ display: "flex", gap: 10 }}>
+    
+    {/* DELETE BUTTON */}
+    <button
+      className="btn"
+      style={{
+        background: "rgba(255,92,92,0.1)",
+        color: "#ff5c5c",
+        border: "1px solid #ff5c5c"
+      }}
+      onClick={async () => {
+  const confirmDelete = window.confirm("Delete all today's logs?");
+  if (!confirmDelete) return;
+
+  try {
+    const todayDate = new Date().toISOString().split("T")[0];
+
+    const logsToDelete = logs.filter(l => l.date === todayDate);
+
+    // ✅ SMART CHECK (no logs case)
+    if (logsToDelete.length === 0) {
+      alert("No logs to delete 📭");
+      return;
+    }
+
+    // 🔥 BETTER: parallel delete (faster, no lag)
+    await Promise.all(
+      logsToDelete.map(log => deleteLog(log.id))
+    );
+
+    // ✅ SUCCESS MESSAGE
+    alert("All today's logs cleared ✅");
+
+  } catch (err) {
+    console.error(err);
+    alert("Failed to delete logs ❌");
+  }
+}}
+    >
+      <Icon name="trash" size={14} /> Delete
+    </button>
+
+    {/* LOG TIME BUTTON */}
+    <button className="btn btn-ghost" onClick={onLogTime}>
+      <Icon name="plus" size={14} /> Log Time
+    </button>
+
+  </div>
+</div>
       <div className="page">
         <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14, padding: 28, marginBottom: 24, display: "flex", alignItems: "center", gap: 32 }}>
           <div style={{ position: "relative", width: 140, height: 140, flexShrink: 0 }}>
@@ -690,12 +859,12 @@ function TargetPage({ dailyTarget, setDailyTarget, todayHours, todayProgress, lo
               <circle cx="70" cy="70" r="58" fill="none" stroke="var(--border2)" strokeWidth="10" />
               <circle cx="70" cy="70" r="58" fill="none" stroke="var(--accent)" strokeWidth="10"
                 strokeDasharray={`${2 * Math.PI * 58}`}
-                strokeDashoffset={`${2 * Math.PI * 58 * (1 - todayProgress / 100)}`}
+                strokeDashoffset={`${2 * Math.PI * 58 * (1 - Math.min(100, todayProgress) / 100)}`}
                 strokeLinecap="round" transform="rotate(-90 70 70)"
                 style={{ transition: "stroke-dashoffset 0.5s" }} />
             </svg>
             <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-              <span style={{ fontSize: 28, fontWeight: 800, fontFamily: "var(--mono)", color: "var(--accent)" }}>{Math.round(todayProgress)}%</span>
+              <span style={{ fontSize: 28, fontWeight: 800, fontFamily: "var(--mono)", color: "var(--accent)" }}>{Math.round(Math.min(100, todayProgress))}%</span>
               <span style={{ fontSize: 11, color: "var(--text3)", fontWeight: 600 }}>of goal</span>
             </div>
           </div>
@@ -760,15 +929,34 @@ function AddTopicModal({ onClose, onSave }) {
   );
 }
 
-function LogTimeModal({ onClose, onSave }) {
+// ✅ FIXED: Log Time button now shows text, validation moved inside handleSubmit
+function LogTimeModal({ onClose, onSave, topics, selectedTopicId, setSelectedTopicId }) {
   const [hours, setHours] = useState(1);
   const [subject, setSubject] = useState(SUBJECTS[0]);
   const [note, setNote] = useState("");
+
+  const handleSubmit = () => {
+    if (!selectedTopicId) {
+      alert("Please select a topic");
+      return;
+    }
+    if (hours > 0) onSave({ hours, subject, note });
+  };
+
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-title">Log Study Time <button className="btn btn-danger" onClick={onClose}><Icon name="x" size={16} /></button></div>
         <div className="form-stack">
+          <div className="form-group">
+            <label className="form-label">Topic *</label>
+            <select className="form-select" value={selectedTopicId} onChange={e => setSelectedTopicId(e.target.value)}>
+              <option value="">— Select a topic —</option>
+              {(topics || []).map(t => (
+                <option key={t.id} value={t.id}>{t.name} ({t.subject})</option>
+              ))}
+            </select>
+          </div>
           <div className="form-row">
             <div className="form-group"><label className="form-label">Hours *</label><input type="number" className="form-input" min={0.25} max={16} step={0.25} value={hours} onChange={e => setHours(parseFloat(e.target.value))} autoFocus /></div>
             <div className="form-group"><label className="form-label">Subject *</label><select className="form-select" value={subject} onChange={e => setSubject(e.target.value)}>{SUBJECTS.map(s => <option key={s}>{s}</option>)}</select></div>
@@ -777,7 +965,7 @@ function LogTimeModal({ onClose, onSave }) {
         </div>
         <div className="modal-actions">
           <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={() => hours > 0 && onSave({ hours, subject, note })}>Log Time</button>
+          <button className="btn btn-primary" onClick={handleSubmit}>Log Time</button>
         </div>
       </div>
     </div>
