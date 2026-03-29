@@ -11,7 +11,9 @@ export const useLogs = (userId) => {
 
     const channel = supabase
       .channel('logs')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'study_logs', filter: `user_id=eq.${userId}` },
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'logs', filter: `user_id=eq.${userId}` }, // ✅ FIXED
         () => fetchLogs()
       )
       .subscribe()
@@ -21,29 +23,46 @@ export const useLogs = (userId) => {
 
   const fetchLogs = async () => {
     const { data, error } = await supabase
-      .from('study_logs')
+      .from('logs') // ✅ FIXED
       .select('*')
       .order('created_at', { ascending: false })
-    if (!error) setLogs(data)
+
+    if (error) {
+      console.error("Fetch error:", error)
+    } else {
+      setLogs(data)
+    }
+
     setLoading(false)
   }
 
   const addLog = async (log) => {
     const { data, error } = await supabase
-      .from('study_logs')
+      .from('logs') // ✅ FIXED
       .insert([{ ...log, user_id: userId }])
       .select()
-    if (!error) setLogs(prev => [data[0], ...prev])
+
+    if (error) {
+      console.error("Insert error:", error)
+    } else {
+      setLogs(prev => [data[0], ...prev])
+    }
+
     return { error }
   }
 
-  // ✅ NEW: deleteLog
   const deleteLog = async (id) => {
     const { error } = await supabase
-      .from('study_logs')
+      .from('logs') // ✅ FIXED
       .delete()
       .eq('id', id)
-    if (!error) setLogs(prev => prev.filter(l => l.id !== id))
+
+    if (error) {
+      console.error("Delete error:", error)
+    } else {
+      setLogs(prev => prev.filter(l => l.id !== id))
+    }
+
     return { error }
   }
 
